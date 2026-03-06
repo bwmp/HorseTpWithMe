@@ -88,9 +88,13 @@ public class HorseTpWithMe extends JavaPlugin {
         }
         ccs.sendMessage("");
 
+        saveDefaultConfig();
+        final var maxLeashDepth = Math.max(1,
+                getConfig().getInt("leashed.max-depth", LeashedReason.DEFAULT_MAX_LEASH_DEPTH));
+
         API.DATA_STORE.registerReason(new VehicleReason());
         API.DATA_STORE.registerReason(new PassengerReason());
-        API.DATA_STORE.registerReason(new LeashedReason());
+        API.DATA_STORE.registerReason(new LeashedReason(maxLeashDepth));
         API.DATA_STORE.registerReason(new SittableReason());
 
         final var scheduler = getServer().getScheduler();

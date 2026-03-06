@@ -1,0 +1,3 @@
+leashed:
+  # Maximum leash-chain depth to traverse from the player.
+  max-depth: 10

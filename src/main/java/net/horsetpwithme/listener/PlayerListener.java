@@ -3,7 +3,6 @@ package net.horsetpwithme.listener;
 import net.horsetpwithme.HorseTpWithMe;
 import net.horsetpwithme.api.ReasonHTWM;
 import net.horsetpwithme.reason.PassengerReason;
-import net.horsetpwithme.reason.VehicleReason;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.entity.Entity;
@@ -45,24 +44,48 @@ public class PlayerListener implements Listener {
         final var reasonMap = new LinkedHashMap<Entity, Set<ReasonHTWM>>();
         final var worldF = Objects.requireNonNull(posF.getWorld());
         final var worldT = Objects.requireNonNull(posT.getWorld());
-        final var nearbyVehicle = new ArrayList<Entity>();
         final var nearby = player.getNearbyEntities(NEARBY_SEARCH_RADIUS,
                 NEARBY_SEARCH_RADIUS, NEARBY_SEARCH_RADIUS);
+        final var passengerReason = HorseTpWithMe.API.DATA_STORE
+                .getRegisteredReason(PassengerReason.class);
         HorseTpWithMe.API.DATA_STORE.reasons().forEach(reason -> {
-            final var near = reason instanceof PassengerReason ? nearbyVehicle : nearby;
-            final var entities = reason.getHandledEntities(player, near, posF, posT);
+            if (reason instanceof PassengerReason) {
+                return;
+            }
+            final var entities = reason.getHandledEntities(player, nearby, posF, posT);
             entities.forEach(entity -> {
                 final var entityType = entity.getType();
                 final var requiredTeleportPermission = HorseTpWithMe.API.PERMS
                         .getRequiredPermission(worldF, worldT, reason, entityType);
                 if (!USE_PERMISSIONS || player.hasPermission(requiredTeleportPermission)) {
                     reasonMap.computeIfAbsent(entity, k -> new LinkedHashSet<>()).add(reason);
-                    if (reason instanceof VehicleReason && nearbyVehicle.isEmpty()) {
-                        nearbyVehicle.add(entity);
-                    }
                 }
             });
         });
+
+        if (passengerReason != null && !reasonMap.isEmpty()) {
+            final Deque<Entity> queue = new ArrayDeque<>(reasonMap.keySet());
+            final var seen = new HashSet<>(reasonMap.keySet());
+            while (!queue.isEmpty()) {
+                final var carrier = queue.poll();
+                carrier.getPassengers().forEach(passenger -> {
+                    if (player.equals(passenger)) {
+                        return;
+                    }
+                    final var requiredTeleportPermission = HorseTpWithMe.API.PERMS
+                            .getRequiredPermission(worldF, worldT,
+                                    passengerReason, passenger.getType());
+                    if (!USE_PERMISSIONS || player.hasPermission(requiredTeleportPermission)) {
+                        reasonMap.computeIfAbsent(passenger,
+                                k -> new LinkedHashSet<>()).add(passengerReason);
+                        if (seen.add(passenger)) {
+                            queue.add(passenger);
+                        }
+                    }
+                });
+            }
+        }
+
         return reasonMap;
     }
 
@@ -70,12 +93,19 @@ public class PlayerListener implements Listener {
     private void onPlayerTeleport(@NotNull PlayerTeleportEvent event) {
         if (!BANNED_TELEPORT_CAUSES.contains(event.getCause()) && event.getTo() != null) {
             final var player = event.getPlayer();
-            mapReasons(player, event.getFrom(), event.getTo()).forEach((entity, reasons) -> {
+            final var mappedReasons = mapReasons(player, event.getFrom(), event.getTo());
+
+            mappedReasons.forEach((entity, reasons) -> {
+                if (!reasons.isEmpty()) {
+                    reasons.forEach(type -> type.handleEntityBeforeTeleport(player,
+                            entity, event.getFrom(), event.getTo()));
+                }
+            });
+
+            mappedReasons.forEach((entity, reasons) -> {
                 if (!reasons.isEmpty()) {
                     final var chunk = entity.getLocation().getChunk();
                     chunk.addPluginChunkTicket(plugin);
-                    reasons.forEach(type -> type.handleEntityBeforeTeleport(player,
-                            entity, event.getFrom(), event.getTo()));
                     entity.eject();
                     entity.leaveVehicle();
                     player.hideEntity(plugin, entity);
@@ -93,11 +123,12 @@ public class PlayerListener implements Listener {
                         chunk.removePluginChunkTicket(plugin);
                     }, AFTER_TELEPORT_CLEANUP_DELAY);
                 }
-                event.getTo().getChunk().addPluginChunkTicket(plugin);
-                SCHEDULER.runTaskLater(plugin, () -> {
-                    event.getTo().getChunk().removePluginChunkTicket(plugin);
-                }, AFTER_TELEPORT_CLEANUP_DELAY);
             });
+
+            event.getTo().getChunk().addPluginChunkTicket(plugin);
+            SCHEDULER.runTaskLater(plugin, () -> {
+                event.getTo().getChunk().removePluginChunkTicket(plugin);
+            }, AFTER_TELEPORT_CLEANUP_DELAY);
         }
     }
 }

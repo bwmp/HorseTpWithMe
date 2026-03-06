@@ -11,11 +11,11 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.jetbrains.annotations.NotNull;
-import org.spigotmc.event.entity.EntityDismountEvent;
+import org.bukkit.event.entity.EntityDismountEvent;
 
 import java.util.HashMap;
 
-@SuppressWarnings({"UnstableApiUsage", "deprecation"})
+@SuppressWarnings({"UnstableApiUsage"})
 public class EventListeners implements Listener {
 
     public final static EventListeners INSTANCE = new EventListeners();
